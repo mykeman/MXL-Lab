@@ -1,0 +1,12 @@
+# NDI runtime and Discovery Server binaries. NDI SDK licence: not redistributable.
+ndi/
+
+# Local settings and runtime state
+.env
+config/*
+!config/.gitkeep
+setup.log
+
+# Python
+__pycache__/
+*.pyc

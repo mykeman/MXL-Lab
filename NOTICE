@@ -1,0 +1,13 @@
+MXL Lab
+Copyright 2026 Michael Rankin
+
+This product includes software developed by Michael Rankin as part of the
+MXL Lab project: an NDI ingest, 9:16 autoframing and NDI output lab built on
+the Media eXchange Layer (MXL), with a web control GUI.
+https://github.com/mykeman/MXL-Lab
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Third-party software used by this project is listed in THIRD-PARTY.md.
+It is downloaded at install or build time and is not part of this distribution.
+NDI® is a registered trademark of Vizrt NDI AB.

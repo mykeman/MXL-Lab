@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MXL lab control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #2a2f35;
+  --panel: #333940;
+  --raised: #3e454d;
+  --line: #4a525b;
+  --ink: #e8eaec;
+  --muted: #a3abb4;
+  --live: #46c079;
+  --fault: #e4534f;
+  --cue: #e9a83b;
+  --font: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.4; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--cue); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: .01em; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chain .hop { color: var(--muted); }
+.lamp { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); font-size: .92rem; }
+.lamp i { width: 10px; height: 10px; border-radius: 50%; background: #5c646d; flex: none; }
+.lamp[data-s="running"] i { background: var(--live); box-shadow: 0 0 8px var(--live); }
+.lamp[data-s="restarting"] i, .lamp[data-s="created"] i { background: var(--cue); }
+.lamp[data-s="exited"] i, .lamp[data-s="dead"] i, .lamp[data-s="missing"] i { background: var(--fault); }
+
+main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); gap: 20px; padding: 20px 24px 40px; max-width: 1500px; }
+@media (max-width: 980px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 12px 16px; } }
+
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 18px 20px; margin-bottom: 20px; }
+section > h2 { margin: 0 0 14px; font-size: 1.15rem; font-weight: 600; }
+h3 { margin: 22px 0 10px; font-size: 1rem; font-weight: 600; color: var(--muted); }
+
+/* framing monitor: the one loud element */
+.monitor { position: relative; background: #1d2126; border: 1px solid var(--line); border-radius: 2px; aspect-ratio: 16 / 9; overflow: hidden; }
+.monitor img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+.monitor .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 20px; text-align: center; }
+.window { position: absolute; top: 0; bottom: 0; border: 2px solid var(--ink); box-shadow: 0 0 0 9999px rgba(20, 23, 27, .55); transition: left 80ms linear; pointer-events: none; }
+.target { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--cue); pointer-events: none; }
+.monitor.manual { cursor: ew-resize; }
+.monitor.manual .window { border-color: var(--cue); }
+.readout { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 10px; color: var(--muted); font-size: .95rem; }
+.readout b { color: var(--ink); font-weight: 600; }
+
+.modes { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; margin-top: 16px; }
+.modes button { background: var(--bg); border: 0; border-right: 1px solid var(--line); padding: 9px 6px; cursor: pointer; }
+.modes button:last-child { border-right: 0; }
+.modes button[aria-pressed="true"] { background: var(--raised); box-shadow: inset 0 -3px 0 var(--cue); font-weight: 600; }
+.modes.three { grid-template-columns: repeat(3, 1fr); margin-top: 0; }
+.modehelp { color: var(--muted); font-size: .95rem; margin: 8px 0 0; min-height: 1.4em; }
+
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 4px 28px; }
+.ctl { padding: 8px 0; }
+.ctl .top { display: flex; justify-content: space-between; gap: 10px; }
+.ctl label { font-weight: 500; }
+.ctl output { font-variant-numeric: tabular-nums; color: var(--cue); }
+.ctl p { margin: 2px 0 6px; color: var(--muted); font-size: .9rem; }
+input[type=range] { width: 100%; accent-color: var(--cue); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+
+.btn { background: var(--raised); border: 1px solid var(--line); border-radius: 3px; padding: 8px 14px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.go { background: var(--cue); border-color: var(--cue); color: #231a08; font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { padding: 4px 10px; font-size: .92rem; }
+.saved { color: var(--muted); font-size: .92rem; }
+
+.block { margin-bottom: 18px; }
+.block h3 { margin: 0 0 8px; color: var(--ink); }
+.blockhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+.blockhead h3 { margin: 0; }
+.picked { background: var(--raised); border: 1px solid var(--line); border-left: 3px solid var(--cue); border-radius: 3px; padding: 12px 14px 14px; }
+.picked .field:first-of-type { margin-top: 0; }
+.picked .field input { background: var(--panel); }
+.sources { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 3px; max-height: 260px; overflow-y: auto; }
+.sources li button { display: flex; width: 100%; justify-content: space-between; gap: 10px; text-align: left; background: var(--bg); border: 0; border-bottom: 1px solid var(--line); padding: 10px 12px; cursor: pointer; }
+.sources li:last-child button { border-bottom: 0; }
+.sources li button:hover { background: var(--raised); }
+.sources li button[aria-pressed="true"] { background: var(--raised); box-shadow: inset 3px 0 0 var(--cue); }
+.sources small { color: var(--muted); }
+.sources .none { padding: 12px; color: var(--muted); }
+
+.field { display: grid; gap: 4px; margin-top: 12px; }
+.field span { color: var(--muted); font-size: .92rem; }
+.field input, .field select { background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; width: 100%; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0 12px; }
+.note { color: var(--muted); font-size: .92rem; margin: 10px 0 0; }
+.joblog { margin-top: 12px; background: #1d2126; border: 1px solid var(--line); border-radius: 3px; padding: 10px 12px; font-size: .9rem; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+.joblog.ok { border-color: var(--live); }
+.joblog.failed { border-color: var(--fault); }
+
+.fn { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.fn:last-child { border-bottom: 0; }
+.fn .meta { color: var(--muted); font-size: .9rem; grid-column: 1; }
+.fn .acts { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; align-items: center; }
+.fn pre { grid-column: 1 / -1; margin: 6px 0 0; background: #1d2126; border: 1px solid var(--line); border-radius: 3px; padding: 10px; font-size: .82rem; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+
+.flows { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.flow { background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 10px 12px; }
+.flow .rate { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.flow .sub { color: var(--muted); font-size: .88rem; word-break: break-all; }
+.warn { color: var(--fault); }
+
+@media (prefers-reduced-motion: reduce) { .window { transition: none; } .lamp i { box-shadow: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MXL lab control</h1>
+  <div class="chain" aria-label="Media functions">
+    <span class="lamp" id="lamp-ndi-ingest"><i></i>NDI in</span><span class="hop">›</span>
+    <span class="lamp" id="lamp-autoframe"><i></i>Autoframe</span><span class="hop">›</span>
+    <span class="lamp" id="lamp-ndi-out-original"><i></i>Original out</span>
+    <span class="lamp" id="lamp-ndi-out-vertical"><i></i>Vertical out</span>
+  </div>
+</header>
+
+<main>
+  <div>
+    <section aria-labelledby="framing-h">
+      <h2 id="framing-h">Framing</h2>
+      <div class="monitor" id="monitor">
+        <img id="preview" alt="Detection frame with the 9:16 crop window" hidden>
+        <div class="empty" id="preview-empty">Waiting for the autoframe function. Preview appears once it is running with preview turned on.</div>
+        <div class="target" id="target" hidden></div>
+        <div class="window" id="window" hidden></div>
+      </div>
+      <div class="readout num" id="readout">
+        <span>Faces <b id="r-faces">-</b></span>
+        <span>Crop left <b id="r-left">-</b></span>
+        <span>Detection <b id="r-det">-</b></span>
+        <span>Last face <b id="r-seen">-</b></span>
+        <span>Output <b id="r-out">-</b></span>
+      </div>
+
+      <div class="modes" id="frame-modes" role="group" aria-label="Framing mode">
+        <button data-mode="weighted" aria-pressed="false">Follow group</button>
+        <button data-mode="largest" aria-pressed="false">Follow nearest</button>
+        <button data-mode="manual" aria-pressed="false">Manual</button>
+        <button data-mode="hold" aria-pressed="false">Hold</button>
+      </div>
+      <p class="modehelp" id="modehelp"></p>
+
+      <div class="ctl" id="manual-ctl" hidden>
+        <div class="top"><label for="manual_pos">Manual position</label><output for="manual_pos" id="o-manual_pos"></output></div>
+        <p>Drag on the picture or use this slider.</p>
+        <input type="range" id="manual_pos" min="0" max="1" step="0.005">
+      </div>
+
+      <h3>Motion</h3>
+      <div class="controls" id="c-motion"></div>
+      <h3>Detection</h3>
+      <div class="controls" id="c-detect"></div>
+      <h3>Composition</h3>
+      <div class="controls" id="c-comp"></div>
+
+      <div class="row">
+        <label><input type="checkbox" id="preview_on"> Show detection preview</label>
+        <button class="btn small" id="reset">Reset to defaults</button>
+        <span class="saved" id="saved" aria-live="polite"></span>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <section aria-labelledby="src-h">
+      <h2 id="src-h">NDI source</h2>
+      <div class="block">
+        <div class="blockhead">
+          <h3>On the network</h3>
+          <button class="btn small" id="rescan">Search again</button>
+        </div>
+        <p class="note" style="margin:0 0 8px" id="src-found">Searching the network</p>
+        <ul class="sources" id="sources"></ul>
+      </div>
+
+      <div class="block picked">
+        <h3>Selected source</h3>
+        <label class="field"><span>Source name</span>
+          <input id="ndi_src" autocomplete="off" spellcheck="false" placeholder="Pick from the list above or type a name">
+        </label>
+        <label class="field"><span>Address, optional</span>
+          <input id="ndi_url" autocomplete="off" spellcheck="false" placeholder="192.168.1.169:5961">
+        </label>
+        <p class="note">With an address, ingest connects straight to the sender and does not rely on NDI discovery.</p>
+      </div>
+
+      <div class="grid3">
+        <label class="field"><span>Source format</span><select id="resolution"></select></label>
+        <label class="field"><span>Frame rate</span><select id="fps"></select></label>
+        <label class="field"><span>Vertical output</span><select id="output"></select></label>
+        <label class="field"><span>Scaler</span><select id="scaler"></select></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn small" id="detect" type="button">Detect format</button>
+        <span class="saved" id="detected" aria-live="polite"></span>
+      </div>
+      <p class="note">Scaler cost runs from Lanczos (sharpest, most CPU) to bilinear (lightest).</p>
+      <p class="note">Applying restarts all four functions and clears the MXL domain. Both NDI outputs drop for a few seconds.</p>
+      <div class="row">
+        <button class="btn go" id="apply">Apply and restart</button>
+        <span class="saved" id="current-src"></span>
+      </div>
+      <div class="joblog" id="joblog" hidden aria-live="polite"></div>
+    </section>
+
+    <section aria-labelledby="disc-h">
+      <h2 id="disc-h">NDI discovery</h2>
+      <div class="modes three" role="group" aria-label="How the lab finds NDI sources">
+        <button data-disc="mdns" aria-pressed="false">mDNS</button>
+        <button data-disc="local" aria-pressed="false">Internal server</button>
+        <button data-disc="external" aria-pressed="false">External server</button>
+      </div>
+      <p class="modehelp" id="disc-help"></p>
+      <label class="field" id="disc-servers-field" hidden><span>Discovery server address</span>
+        <input id="disc-servers" autocomplete="off" spellcheck="false" placeholder="192.168.1.20, or several separated by commas">
+      </label>
+      <p class="note">Applying restarts the four functions so they pick up the new setting.</p>
+      <div class="row">
+        <button class="btn go" id="disc-apply">Apply discovery</button>
+        <span class="saved" id="disc-current"></span>
+      </div>
+      <div class="joblog" id="disc-log" hidden aria-live="polite"></div>
+    </section>
+
+    <section aria-labelledby="flows-h">
+      <h2 id="flows-h">MXL flows</h2>
+      <div class="flows">
+        <div class="flow"><div>Flow A, original</div><div class="rate" id="fa-rate">-</div><div class="sub" id="fa-sub"></div></div>
+        <div class="flow"><div>Flow B, vertical</div><div class="rate" id="fb-rate">-</div><div class="sub" id="fb-sub"></div></div>
+      </div>
+      <p class="note">Grains per second from the head index. It should match the frame rate.</p>
+    </section>
+
+    <section aria-labelledby="fn-h">
+      <h2 id="fn-h">Functions</h2>
+      <div id="fns"></div>
+      <p class="note warn" id="docker-error" hidden></p>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (path, opts = {}) => {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
+  return body;
+};
+
+/* ---------- tuning controls ---------- */
+const CONTROLS = {
+  "c-motion": [
+    ["ease", "Follow speed", "Share of the remaining distance moved each tick. Higher is snappier.", 0.01, 0.4, 0.005, (v) => v.toFixed(3)],
+    ["max_step_px", "Speed limit", "Most the frame can move per tick, in source pixels.", 1, 40, 0.5, (v) => v + " px"],
+    ["deadband_px", "Deadband", "Ignore target moves smaller than this. Stops small hunting.", 0, 150, 1, (v) => v + " px"],
+    ["recentre_s", "Return to centre after", "How long with no face before the frame drifts back.", 0.5, 20, 0.5, (v) => v + " s"],
+  ],
+  "c-detect": [
+    ["score_threshold", "Confidence", "Minimum face score. Raise it to drop false faces.", 0.3, 0.95, 0.01, (v) => v.toFixed(2)],
+    ["det_period_s", "Detection interval", "Time between detections. Lower costs more CPU.", 0.05, 1.0, 0.01, (v) => Math.round(1 / v) + " per s"],
+    ["min_face_px", "Smallest face", "Ignore faces narrower than this in the source frame.", 0, 400, 5, (v) => v + " px"],
+    ["top_k", "Max faces", "Most faces considered per detection.", 1, 20, 1, (v) => String(v)],
+    ["nms_threshold", "Overlap merge", "How much two boxes can overlap before one is dropped.", 0.1, 0.7, 0.01, (v) => v.toFixed(2)],
+  ],
+  "c-comp": [
+    ["bias_px", "Horizontal offset", "Shift the frame from the face. Negative moves it left.", -300, 300, 2, (v) => (v > 0 ? "+" : "") + v + " px"],
+  ],
+};
+const MODE_HELP = {
+  weighted: "Frames all faces, weighted toward the largest.",
+  largest: "Frames only the largest face. Better for two-shots.",
+  manual: "Detection keeps running but the frame goes where you put it.",
+  hold: "The frame stays where it is.",
+};
+
+let tuning = {};
+let status = {};
+let saveTimer = null;
+
+function buildControls() {
+  for (const [box, list] of Object.entries(CONTROLS)) {
+    const el = $(box);
+    for (const [key, label, help, min, max, step] of list) {
+      el.insertAdjacentHTML("beforeend",
+        `<div class="ctl"><div class="top"><label for="${key}">${label}</label><output id="o-${key}"></output></div>
+         <p>${help}</p><input type="range" id="${key}" min="${min}" max="${max}" step="${step}"></div>`);
+      $(key).addEventListener("input", (e) => { tuning[key] = Number(e.target.value); showValues(); queueSave(); });
+    }
+  }
+  $("manual_pos").addEventListener("input", (e) => { tuning.manual_pos = Number(e.target.value); showValues(); drawWindow(); queueSave(); });
+  $("preview_on").addEventListener("change", (e) => { tuning.preview = e.target.checked; queueSave(); });
+  document.querySelectorAll("#frame-modes button").forEach((b) =>
+    b.addEventListener("click", () => { tuning.mode = b.dataset.mode; showValues(); queueSave(); }));
+  $("reset").addEventListener("click", async () => {
+    tuning = (await api("/api/tuning/reset", { method: "POST" })).values;
+    showValues(); flash("Defaults restored");
+  });
+}
+
+function fmt(key, v) {
+  for (const list of Object.values(CONTROLS)) for (const c of list) if (c[0] === key) return c[6](v);
+  return String(v);
+}
+
+function showValues() {
+  for (const list of Object.values(CONTROLS)) for (const [key] of list) {
+    if (tuning[key] === undefined) continue;
+    const input = $(key);
+    if (document.activeElement !== input) input.value = tuning[key];
+    $("o-" + key).textContent = fmt(key, Number(tuning[key]));
+  }
+  $("manual_pos").value = tuning.manual_pos;
+  $("o-manual_pos").textContent = Math.round(tuning.manual_pos * 100) + "%";
+  $("preview_on").checked = !!tuning.preview;
+  document.querySelectorAll("#frame-modes button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === tuning.mode)));
+  $("modehelp").textContent = MODE_HELP[tuning.mode] || "";
+  $("manual-ctl").hidden = tuning.mode !== "manual";
+  $("monitor").classList.toggle("manual", tuning.mode === "manual");
+}
+
+function queueSave() {
+  clearTimeout(saveTimer);
+  $("saved").textContent = "";
+  saveTimer = setTimeout(async () => {
+    try { await api("/api/tuning", { method: "PUT", body: JSON.stringify(tuning) }); flash("Saved, applied live"); }
+    catch (e) { flash("Not saved: " + e.message); }
+  }, 250);
+}
+function flash(msg) { $("saved").textContent = msg; }
+
+/* ---------- manual drag on the monitor ---------- */
+function dragTo(ev) {
+  const af = status.autoframe || {};
+  if (tuning.mode !== "manual" || !af.src_w) return;
+  const rect = $("monitor").getBoundingClientRect();
+  const x = (ev.clientX - rect.left) / rect.width * af.src_w;
+  const pos = (x - af.crop_w / 2) / (af.src_w - af.crop_w);
+  tuning.manual_pos = Math.min(1, Math.max(0, pos));
+  showValues(); drawWindow(); queueSave();
+}
+let dragging = false;
+$("monitor").addEventListener("pointerdown", (e) => { if (tuning.mode === "manual") { dragging = true; $("monitor").setPointerCapture(e.pointerId); dragTo(e); } });
+$("monitor").addEventListener("pointermove", (e) => { if (dragging) dragTo(e); });
+$("monitor").addEventListener("pointerup", () => { dragging = false; });
+
+let pvMeta = null;      // crop position that came with the frame on screen
+let pvMetaAt = 0;
+
+function drawWindow() {
+  const st = status.autoframe || {};
+  const fresh = pvMeta && Date.now() - pvMetaAt < 2000;
+  const af = fresh ? pvMeta : st;
+  const live = af.src_w && (fresh || (st.age !== undefined && st.age < 5));
+  $("window").hidden = !live;
+  $("target").hidden = !live || tuning.mode === "hold";
+  if (!live) return;
+  let left = af.crop_left;
+  if (tuning.mode === "manual") left = tuning.manual_pos * (af.src_w - af.crop_w);
+  $("window").style.left = (left / af.src_w * 100) + "%";
+  $("window").style.width = (af.crop_w / af.src_w * 100) + "%";
+  const tgt = tuning.mode === "manual" ? left + af.crop_w / 2 : af.target;
+  $("target").style.left = (tgt / af.src_w * 100) + "%";
+}
+
+/* ---------- status polling ---------- */
+const FN_LABEL = { "ndi-discovery": "Discovery server", "ndi-ingest": "NDI in", "autoframe": "Autoframe", "ndi-out-original": "Original out", "ndi-out-vertical": "Vertical out" };
+const openLogs = new Set();
+
+function buildFunctions() {
+  $("fns").innerHTML = Object.entries(FN_LABEL).map(([svc, label]) => `
+    <div class="fn" id="fn-${svc}">
+      <div><span class="lamp" id="fl-${svc}"><i></i>${label}</span></div>
+      <div class="meta" id="fm-${svc}"></div>
+      <div class="acts">
+        <button class="btn small" data-logs="${svc}" aria-expanded="false">Logs</button>
+        <button class="btn small" data-restart="${svc}">Restart</button>
+      </div>
+      <pre id="log-${svc}" hidden></pre>
+    </div>`).join("");
+  $("fns").addEventListener("click", async (e) => {
+    const r = e.target.dataset.restart, l = e.target.dataset.logs;
+    if (r) {
+      e.target.disabled = true; e.target.textContent = "Restarting";
+      try { await api(`/api/containers/${r}/restart`, { method: "POST" }); } catch (err) { alert(err.message); }
+      e.target.disabled = false; e.target.textContent = "Restart";
+    }
+    if (l) {
+      const open = !openLogs.has(l);
+      open ? openLogs.add(l) : openLogs.delete(l);
+      e.target.setAttribute("aria-expanded", String(open));
+      $("log-" + l).hidden = !open;
+      if (open) refreshLog(l);
+    }
+  });
+}
+
+async function refreshLog(svc) {
+  try {
+    const { text } = await api(`/api/containers/${svc}/logs?tail=150`);
+    const pre = $("log-" + svc);
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    pre.textContent = text || "No output yet.";
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  } catch (e) { $("log-" + svc).textContent = e.message; }
+}
+
+function ago(iso) {
+  if (!iso || iso.startsWith("0001")) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return Math.round(s) + " s";
+  if (s < 5400) return Math.round(s / 60) + " min";
+  return (s / 3600).toFixed(1) + " h";
+}
+
+function showFlow(prefix, f, fps) {
+  if (!f || !f.exists) { $(prefix + "-rate").textContent = "Not present"; $(prefix + "-sub").textContent = f ? f.id : ""; return; }
+  const rate = f.rate == null ? "-" : f.rate + " /s";
+  $(prefix + "-rate").textContent = rate;
+  $(prefix + "-rate").classList.toggle("warn", f.rate != null && fps && Math.abs(f.rate - fps) > 2);
+  $(prefix + "-sub").textContent = (f.head != null ? "Head " + f.head + ". " : "Head index not parsed. ") + f.id;
+}
+
+async function poll() {
+  try {
+    status = await api("/api/status");
+    for (const [svc, c] of Object.entries(status.containers || {})) {
+      for (const id of ["lamp-" + svc, "fl-" + svc]) $(id) && $(id).setAttribute("data-s", c.status);
+      const up = c.status === "running" ? "Running " + ago(c.started)
+        : c.status === "exited" ? "Stopped, exit code " + c.exit_code
+        : c.status === "unused" ? "Not used with the current discovery setting"
+        : c.status;
+      $("fm-" + svc).textContent = up + (c.restarts ? `, ${c.restarts} restarts` : "");
+    }
+    $("docker-error").hidden = !status.docker_error;
+    $("docker-error").textContent = status.docker_error ? "Cannot reach Docker: " + status.docker_error : "";
+
+    const af = status.autoframe || {};
+    const live = af.age !== undefined && af.age < 5;
+    $("r-faces").textContent = live ? af.faces : "-";
+    $("r-left").textContent = live ? af.crop_left + " of " + (af.src_w - af.crop_w) : "-";
+    $("r-det").textContent = live ? af.det_fps + " /s" : "-";
+    $("r-seen").textContent = live && af.last_seen_age != null ? af.last_seen_age.toFixed(1) + " s ago" : "-";
+    $("r-out").textContent = live ? `${af.crop_w}x${af.src_h} to ${af.out_w}x${af.out_h}, ${af.fps} fps` : "-";
+    drawWindow();
+
+    const fps = (status.autoframe || {}).fps;
+    showFlow("fa", status.flows.A, fps);
+    showFlow("fb", status.flows.B, fps);
+    showJob(status.job);
+    for (const svc of openLogs) refreshLog(svc);
+  } catch (e) {
+    $("docker-error").hidden = false;
+    $("docker-error").textContent = "Lost contact with the control service: " + e.message;
+  }
+}
+
+function showPreviewEmpty(empty) {
+  $("preview").hidden = empty;
+  $("preview-empty").hidden = !empty;
+}
+
+/* Fetches each preview frame as soon as autoframe produces it, and moves the
+   crop window using the position sent with that frame, so the two stay in step. */
+async function previewLoop() {
+  let seq = -1, url = null, lastFrame = 0;
+  for (;;) {
+    if (!tuning.preview) { showPreviewEmpty(true); pvMeta = null; await new Promise((r) => setTimeout(r, 500)); continue; }
+    try {
+      const res = await fetch("/api/preview?after=" + seq, { cache: "no-store" });
+      if (res.status === 200) {
+        const meta = JSON.parse(res.headers.get("X-Preview") || "{}");
+        const blob = await res.blob();
+        const next = URL.createObjectURL(blob);
+        await new Promise((resolve) => {
+          const img = $("preview");
+          img.onload = img.onerror = resolve;
+          img.src = next;
+        });
+        if (url) URL.revokeObjectURL(url);
+        url = next;
+        seq = meta.seq ?? -1;
+        pvMeta = meta; pvMetaAt = Date.now(); lastFrame = Date.now();
+        showPreviewEmpty(false);
+        drawWindow();
+      } else if (Date.now() - lastFrame > 3000) {
+        showPreviewEmpty(true);
+      }
+    } catch (e) {
+      showPreviewEmpty(true);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+}
+
+/* ---------- NDI source and pipeline ---------- */
+let pipeline = {};
+async function loadPipeline() {
+  const p = await api("/api/pipeline");
+  pipeline = p.settings;
+  const fill = (id, values, current, label = (v) => v) =>
+    $(id).innerHTML = values.map((v) => `<option value="${v}" ${String(v) === String(current) ? "selected" : ""}>${label(v)}</option>`).join("");
+  fill("resolution", p.choices.resolutions, pipeline.SRC_AUTO ? "auto" : `${pipeline.SRC_W}x${pipeline.SRC_H}`,
+    (v) => v === "auto" ? "Auto" : v.endsWith("1080") ? "1080p" : "720p");
+  const rates = p.choices.frame_rates.map(String);
+  if (!rates.includes(String(pipeline.SRC_FPS))) rates.unshift(String(pipeline.SRC_FPS));
+  fill("fps", rates, pipeline.SRC_FPS, fpsLabel);
+  if (pipeline.SRC_AUTO) $("detected").textContent = `Last detected: ${pipeline.SRC_W}x${pipeline.SRC_H} at ${fpsLabel(pipeline.SRC_FPS)}`;
+  syncAuto();
+  fill("output", p.choices.outputs, `${pipeline.OUT_W}x${pipeline.OUT_H}`);
+  fill("scaler", p.choices.scalers, pipeline.SCALER, (v) => ({ lanczos: "Lanczos", "4-tap": "4-tap", bilinear: "Bilinear" })[v]);
+  $("ndi_src").value = pipeline.NDI_SRC;
+  $("ndi_url").value = pipeline.NDI_URL || "";
+  $("current-src").textContent = pipeline.NDI_SRC ? "Running: " + pipeline.NDI_SRC + (pipeline.NDI_URL ? " at " + pipeline.NDI_URL : "") : "";
+  showJob(p.job);
+}
+
+function fpsLabel(v) {
+  const t = String(v);
+  if (!t.includes("/")) return t + " fps";
+  const [n, d] = t.split("/").map(Number);
+  return (Math.round(n / d * 100) / 100) + " fps";
+}
+
+function syncAuto() {
+  const auto = $("resolution").value === "auto";
+  $("fps").disabled = auto;
+  $("fps").title = auto ? "Set from the source when you apply" : "";
+}
+$("resolution").addEventListener("change", syncAuto);
+
+$("detect").addEventListener("click", async () => {
+  const name = $("ndi_src").value.trim();
+  if (!name) { $("detected").textContent = "Pick a source first."; return; }
+  $("detect").disabled = true;
+  $("detected").textContent = "Connecting to the source";
+  try {
+    const f = await api("/api/ndi/probe", { method: "POST", body: JSON.stringify({ NDI_SRC: name, NDI_URL: $("ndi_url").value.trim() }) });
+    $("detected").textContent = "Source is " + f.label;
+  } catch (e) { $("detected").textContent = "Could not read the format: " + e.message; }
+  $("detect").disabled = false;
+});
+
+async function loadSources() {
+  const s = await api("/api/ndi/sources").catch((e) => ({ sources: [], error: e.message }));
+  const list = $("sources");
+  if (s.error) { list.innerHTML = `<li class="none warn">${s.error}</li>`; $("src-found").textContent = "Discovery failed"; return; }
+  if (!$("rescan").disabled) $("src-found").textContent = s.sources.length ? `${s.sources.length} ${s.sources.length === 1 ? "source" : "sources"} found` : "Searching the network";
+  if (!s.sources.length) {
+    list.innerHTML = `<li class="none">No sources seen yet. Discovery can take a few seconds. If nothing shows, check avahi and that the VM is on the same VLAN as the sender.</li>`;
+    return;
+  }
+  const chosen = $("ndi_src").value;
+  list.innerHTML = s.sources.map((src) => `<li><button type="button" data-name="${src.name.replace(/"/g, "&quot;")}" data-url="${(src["url-address"] || "").replace(/"/g, "&quot;")}" aria-pressed="${src.name === chosen}">
+      <span>${src.name.replace(/</g, "&lt;")}</span><small>${(src["url-address"] || src.address || "").replace(/</g, "&lt;")}${src.name === pipeline.NDI_SRC ? " In use" : ""}</small></button></li>`).join("");
+}
+$("sources").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-name]");
+  if (!b) return;
+  $("ndi_src").value = b.dataset.name;
+  if (b.dataset.url) $("ndi_url").value = b.dataset.url;
+  document.querySelectorAll("#sources button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+});
+$("rescan").addEventListener("click", async () => {
+  $("rescan").disabled = true;
+  $("src-found").textContent = "Searching the network";
+  await api("/api/ndi/refresh", { method: "POST" }).catch(() => {});
+  // a scan takes about 6 s after the minimum gap; keep the current list until it finishes
+  setTimeout(async () => { await loadSources(); $("rescan").disabled = false; }, 9000);
+});
+
+$("apply").addEventListener("click", async () => {
+  const name = $("ndi_src").value.trim();
+  if (!name) { $("joblog").hidden = false; $("joblog").className = "joblog failed"; $("joblog").textContent = "Pick a source or type its name first."; return; }
+  const body = { NDI_SRC: name, NDI_URL: $("ndi_url").value.trim(), resolution: $("resolution").value, output: $("output").value, SRC_FPS: parseInt($("fps").value, 10) || 0, SCALER: $("scaler").value };
+  try {
+    await api("/api/pipeline/apply", { method: "POST", body: JSON.stringify(body) });
+    $("apply").disabled = true;
+    trackJob();
+  } catch (e) { $("joblog").hidden = false; $("joblog").className = "joblog failed"; $("joblog").textContent = e.message; }
+});
+
+function showJob(j) {
+  if (!j || (!j.running && !j.log.length)) return;
+  const box = $(j.kind === "discovery" ? "disc-log" : "joblog");
+  box.hidden = false;
+  box.className = "joblog" + (j.result ? " " + j.result : "");
+  box.textContent = j.log.join("\n") + (j.running ? "\nWorking" : "");
+  $("apply").disabled = j.running;
+  $("disc-apply").disabled = j.running;
+}
+async function trackJob() {
+  const j = await api("/api/pipeline/job");
+  showJob(j);
+  if (j.running) setTimeout(trackJob, 700);
+  else { await loadPipeline(); await loadDiscovery(); loadSources(); }
+}
+
+/* ---------- NDI discovery ---------- */
+let disc = { mode: "mdns", servers: "", vm_ip: "" };
+let discPick = "mdns";
+const DISC_LABEL = { mdns: "mDNS", local: "internal discovery server", external: "external discovery server" };
+
+function showDiscovery() {
+  document.querySelectorAll("[data-disc]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.disc === discPick)));
+  const ip = disc.vm_ip || "this VM's address";
+  $("disc-help").textContent = {
+    mdns: "Normal NDI discovery. Any NDI machine on this network sees the lab outputs, with nothing to set on other PCs.",
+    local: `Runs an NDI Discovery Server on this VM. On each PC, add ${ip} in NDI Access Manager under Advanced, Discovery Servers.`,
+    external: "Uses a discovery server you already run. The lab registers its outputs there and finds sources there.",
+  }[discPick];
+  $("disc-servers-field").hidden = discPick !== "external";
+  let now = "In use: " + DISC_LABEL[disc.mode];
+  if (disc.mode === "external" && disc.servers) now += " " + disc.servers;
+  if (disc.mode === "local" && disc.vm_ip) now += " " + disc.vm_ip;
+  $("disc-current").textContent = now;
+}
+
+async function loadDiscovery() {
+  try {
+    disc = await api("/api/discovery");
+    discPick = disc.mode;
+    if (disc.servers) $("disc-servers").value = disc.servers;
+    showDiscovery();
+  } catch (e) { $("disc-current").textContent = e.message; }
+}
+
+document.querySelectorAll("[data-disc]").forEach((b) =>
+  b.addEventListener("click", () => { discPick = b.dataset.disc; showDiscovery(); if (discPick === "external") $("disc-servers").focus(); }));
+
+$("disc-apply").addEventListener("click", async () => {
+  const servers = $("disc-servers").value.trim();
+  const box = $("disc-log");
+  if (discPick === "external" && !servers) {
+    box.hidden = false; box.className = "joblog failed"; box.textContent = "Enter the discovery server address first.";
+    return;
+  }
+  try {
+    await api("/api/discovery", { method: "POST", body: JSON.stringify({ mode: discPick, servers }) });
+    $("disc-apply").disabled = true; $("apply").disabled = true;
+    $("sources").innerHTML = ""; $("src-found").textContent = "Searching the network";
+    trackJob();
+  } catch (e) { box.hidden = false; box.className = "joblog failed"; box.textContent = e.message; }
+});
+
+/* ---------- start ---------- */
+(async () => {
+  buildControls();
+  buildFunctions();
+  tuning = (await api("/api/tuning")).values;
+  showValues();
+  await loadPipeline();
+  await loadDiscovery();
+  loadSources();
+  poll();
+  setInterval(poll, 1000);
+  previewLoop();
+  setInterval(loadSources, 5000);
+})();
+</script>
+</body>
+</html>

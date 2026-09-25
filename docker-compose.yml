@@ -1,0 +1,106 @@
+x-common: &common
+  image: mxl-lab:latest
+  env_file: .env
+  environment:
+    NDI_CONFIG_DIR: /config/ndi
+  volumes:
+    - ./config/ndi:/root/.ndi:ro
+    - /dev/shm/mxl:/dev/shm/mxl
+    - ./config:/config
+    - ./scripts:/opt/scripts:ro
+    - ./autoframe.py:/opt/autoframe.py:ro
+    - /var/run/dbus:/var/run/dbus
+    - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+    - /etc/machine-id:/etc/machine-id:ro
+    - preview:/preview
+  # Docker's default AppArmor profile blocks D-Bus, which NDI needs to reach
+  # avahi for mDNS discovery. Unconfined is fine on a lab VLAN.
+  security_opt:
+    - apparmor:unconfined
+  shm_size: "1gb"
+  # tini as process 1, so containers stop cleanly instead of being killed (exit 137)
+  init: true
+  cap_add:
+    - SYS_NICE
+  restart: unless-stopped
+
+services:
+  # Always created. Running only when discovery is set to "Server on this VM";
+  # the GUI and scripts/ndi-mode.sh start and stop it.
+  ndi-discovery:
+    image: mxl-lab:latest
+    container_name: mxl-ndi-discovery
+    network_mode: host
+    init: true
+    volumes:
+      - ./ndi:/opt/ndi:ro
+    command: ["/opt/ndi/ndi-discovery-server"]
+    restart: unless-stopped
+
+  ndi-ingest:
+    <<: *common
+    build:
+      context: .
+      args:
+        UBUNTU: ${UBUNTU_VERSION:-24.04}
+    container_name: mxl-ndi-ingest
+    network_mode: host
+    command: ["/opt/scripts/run-ingest.sh"]
+
+  autoframe:
+    <<: *common
+    container_name: mxl-autoframe
+    depends_on:
+      - ndi-ingest
+    command: ["python3", "/opt/autoframe.py"]
+
+  ndi-out-original:
+    <<: *common
+    container_name: mxl-ndi-out-original
+    network_mode: host
+    depends_on:
+      - ndi-ingest
+    command: ["/opt/scripts/run-out-original.sh"]
+
+  ndi-out-vertical:
+    <<: *common
+    container_name: mxl-ndi-out-vertical
+    network_mode: host
+    depends_on:
+      - autoframe
+    command: ["/opt/scripts/run-out-vertical.sh"]
+
+  gui:
+    build: ./gui
+    image: mxl-lab-gui:latest
+    container_name: mxl-gui
+    init: true
+    env_file: .env
+    environment:
+      NDI_CONFIG_DIR: /config/ndi
+    # host networking so NDI discovery (mDNS) works from inside the container
+    network_mode: host
+    volumes:
+      - /dev/shm/mxl:/dev/shm/mxl
+      - ./config:/config
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./gui/app.py:/opt/gui/app.py:ro
+      - ./gui/static:/opt/gui/static:ro
+      - ./config/ndi:/root/.ndi:ro
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+      - /etc/machine-id:/etc/machine-id:ro
+      - preview:/preview
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+
+volumes:
+  # Live preview frames from autoframe to the GUI. In memory, so the
+  # frequent writes never touch the disk.
+  preview:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=16m"
