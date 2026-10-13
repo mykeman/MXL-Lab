@@ -1,6 +1,6 @@
 # MXL Lab
 
-A self-contained lab for the [Media eXchange Layer (MXL)](https://github.com/dmf-mxl/mxl). It takes an NDI source, passes its video and audio through MXL shared-memory flows, crops the picture to a 9:16 vertical frame that follows faces, and sends the results back out: both pictures as NDI, and the audio as an AES67 stream that Dante and ST 2110-30 receivers can subscribe to. A PTP function keeps the audio timing aligned with the rest of the network. A web GUI controls the whole thing.
+A self-contained lab for the [Media eXchange Layer (MXL)](https://github.com/dmf-mxl/mxl). It takes an NDI source, passes its video and audio through MXL shared-memory flows, crops the picture to a 9:16 vertical frame that follows faces, and sends the results back out: both pictures as NDI, and the audio as an AES67 stream that Dante and ST 2110-30 receivers can subscribe to. A PTP function keeps the audio timing aligned with the rest of the network. A web GUI for control.
 
 It runs as Docker containers on a single Ubuntu VM, and one script takes a fresh VM to a working lab.
 
